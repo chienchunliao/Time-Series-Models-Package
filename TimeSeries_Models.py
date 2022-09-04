@@ -1,4 +1,5 @@
 def generate_lags(series_ts, k):
+
     import numpy as np, pandas as pd
     xs = []
     inde = series_ts.index
