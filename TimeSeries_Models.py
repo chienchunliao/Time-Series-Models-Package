@@ -25,7 +25,7 @@ def ADF_Test(series_ts):
     if result[1] > 0.05:
         return False
     else:
-        return False
+        return True
 
 class MA:
     '''
@@ -304,24 +304,33 @@ class DETS:
         opt_resu = minimize(best_alpha_beta, par_0, bounds=bou)
         self.par = opt_resu.x  
         
-    def predict(self, series_ts):
+    def predict(self, series_ts, n=None, forecast=False):
         import pandas as pd, numpy as np
         Y = series_ts
         a = self.par[0]
         b = self.par[1]
         e = [Y[0]]
         t = [0]
-        pred = [np.nan]
+        result = [np.nan]
         for i in range(1,Y.size):
             j = i-1
             y_i_hat = e[j] + t[j]
-            pred.append(y_i_hat)
+            result.append(y_i_hat)
             e_i = a*Y[i] + (1-a)*(e[j]+t[j])
             e.append(e_i)
             t_i = b*(e[i]-e[j]) + (1-b)*t[j]
             t.append(t_i)
-        pred = pd.Series(pred, index=Y.index, name='DETS Prediction')
-        return pred
+        
+        if forecast:
+            index_fore = []
+            for i in range(1, n+1):
+                result.append(e[-1]+i*t[-1])
+                index_fore.append('forecast_'+str(i))
+            index_new = list(Y.index).extend(index_fore)
+            return pd.Series(result, index=index_new, name='DETS Prediction')
+        else:
+            return pd.Series(result, index=Y.index, name='DETS Prediction')
+
     
     def score(self, series_ts, scoring = 'mse'):
         from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
@@ -354,7 +363,7 @@ class DETS:
             plt.show()
         else:
             print("Model is not trained. Use .fit before plot")        
-    
+
 class DMA:
     '''
     Double Moving Average method.
@@ -369,7 +378,6 @@ class DMA:
     
     def fit(self, series_ts):
         self.data_train = series_ts
-        pass
         
     def predict(self, series_ts):
         import pandas as pd, numpy as np
@@ -428,6 +436,54 @@ class ARIMA:
     ARIMA Model with p, d, and q periods lags.
     '''
     def __init__(self, p=None, d=None, q=None):
+        self.order = [p,d,q]
+        self.name = 'ARIMA with p={0}, d={1}, q={2}'.format(self.order[0], self.order[1], self.order[2])
+        self.model = None
+        
+    def set_params(self, p=None, d=None, q=None):
+        self.order = [p,d,q]
+        self.name = 'ARIMA with p={0}, d={1}, q={2}'.format(self.order[0], self.order[1], self.order[2])
+    
+    def fit(self, series_ts):
+        from statsmodels.tsa.arima.model import ARIMA
+        self.model = ARIMA(series_ts, order=self.order).fit()
+    
+    def predict(self, series_ts):
+        pred = self.model.apply(series_ts).fittedvalues
+        pred.name = "ARIMA({0}, {1}, {2}) Prediction".format(self.order[0], self.order[1], self.order[2])
+        return pred
+    
+    def score(self, series_ts, scoring = 'mse'):
+        from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
+        y_true = series_ts[1:]
+        y_hat = self.predict(series_ts)[1:]
+        if scoring == 'mse':
+            return mean_squared_error(y_true, y_hat)
+        if scoring == 'mae':
+            return mean_absolute_error(y_true, y_hat)
+        if scoring == 'r2':
+            return r2_score(y_true, y_hat)
+    
+    
+    def plot(self, series_ts, scoring=None):
+        import matplotlib.pyplot as plt
+        y_hat = self.predict(series_ts)
+        y_true = series_ts
+        if scoring:
+            scor = self.score(series_ts, scoring=scoring)
+            title = "{0}\n{1}: {2}".format(self.name, scoring, str(scor))
+        else:
+            title = self.name
+        plt.plot(y_true)
+        plt.plot(y_hat)
+        plt.title(title)
+        plt.show()
+        
+class SARIMAX:
+    '''
+    SARIMAX Model with (p,d,q) periods lags and seasonal order (P,D,Q,s).
+    '''
+    def __init__(self, (p,d,q), season_order=(P,D,Q,s)):
         self.order = [p,d,q]
         self.name = 'ARIMA with p={0}, d={1}, q={2}'.format(self.order[0], self.order[1], self.order[2])
         self.model = None
@@ -537,5 +593,12 @@ class GridSearchCV_TS:
             self.best_estimator = copy.copy(self.model)
             self.best_estimator.set_params(*best[1])
             self.best_estimator.fit(series_ts)
+            
 
 
+import pandas as pd
+data = pd.Series( [283,288,336,388,406,412,416,435,428,435,462,452,474,476,497,487,523,528,532,552])
+model = DETS()
+model.fit(data)
+pred = model.predict(data, n=4, forecast=True)
+par = model.par
